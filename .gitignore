@@ -1,0 +1,38 @@
+# Environment secrets — never commit
+.env
+.env.local
+.env.production
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.eslintcache
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Docker
+*.log
+
+# ML models cache (large files)
+/models/
