@@ -14,5 +14,7 @@ module.exports = {
   rules: {
     "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
     "no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
+    // PropTypes not required — project uses plain JSX without TS; add types via TS migration later
+    "react/prop-types": "off",
   },
 };
