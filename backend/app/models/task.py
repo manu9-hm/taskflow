@@ -1,12 +1,15 @@
+from __future__ import annotations
+
+import enum
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
-from sqlalchemy import String, DateTime, Text, ForeignKey, Enum as SAEnum
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID, ARRAY
+
 from pgvector.sqlalchemy import Vector
+from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.database import Base
-import enum
 
 
 class Priority(str, enum.Enum):
