@@ -2,8 +2,7 @@ import uuid
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, text, update, delete
-from sqlalchemy.orm import selectinload
+from sqlalchemy import select, update
 
 from app.database import get_db
 from app.models.task import Task
