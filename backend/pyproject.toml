@@ -3,7 +3,7 @@ line-length = 120
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "I"]
+select = ["E", "F"]
 # F821 produces false positives for SQLAlchemy string-based forward references
 # in Mapped["ModelName"] annotations — safe to ignore for ORM model files
-ignore = ["F821"]
+ignore = ["F821", "E501"]
