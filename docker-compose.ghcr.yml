@@ -1,0 +1,55 @@
+# Run pre-built images from GitHub Container Registry (published by the Deploy workflow).
+#
+# 1. Create a classic PAT with read:packages (and SSO authorize if your org requires it).
+# 2. docker login ghcr.io -u YOUR_GITHUB_USERNAME -p YOUR_PAT
+# 3. Put CR_OWNER=your-github-username (lowercase) in .env next to DB_PASSWORD / SECRET_KEY.
+# 4. docker compose -f docker-compose.ghcr.yml pull && docker compose -f docker-compose.ghcr.yml up -d
+#
+# App: http://localhost  ·  API docs: http://localhost:8000/api/docs
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: taskflow
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: taskflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taskflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    image: ghcr.io/${CR_OWNER}/taskflow-backend:latest
+    restart: unless-stopped
+    pull_policy: always
+    environment:
+      DATABASE_URL: postgresql+asyncpg://taskflow:${DB_PASSWORD}@db:5432/taskflow
+      SECRET_KEY: ${SECRET_KEY}
+      ENVIRONMENT: production
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost}
+      EMBEDDING_CACHE_DIR: /models
+    volumes:
+      - embedding_models:/models
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  frontend:
+    image: ghcr.io/${CR_OWNER}/taskflow-frontend:latest
+    restart: unless-stopped
+    pull_policy: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  embedding_models:

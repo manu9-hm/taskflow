@@ -45,7 +45,9 @@ taskflow/
 │   │   └── components/        # Navbar, TaskCard, TaskModal
 │   └── Dockerfile
 ├── docker-compose.yml
+├── docker-compose.ghcr.yml   # run pre-built images from GHCR (after Deploy workflow)
 ├── .github/workflows/ci.yml
+├── .github/workflows/deploy.yml
 └── .env.example
 ```
 
@@ -115,13 +117,57 @@ Interactive docs: `http://localhost:8000/api/docs`
 - JWT expiry + ownership checks on every task operation
 - CORS restricted to configured origins
 
-## Deployment (Render)
+## Continuous deployment (CD)
 
-1. Push to GitHub
-2. Create a new **Web Service** on [render.com](https://render.com) pointing to `backend/`
-3. Add environment variables from `.env.example`
-4. Create a **PostgreSQL** database on Render, enable the `pgvector` extension
-5. Create a **Static Site** for the frontend, set build command `npm run build`, publish dir `dist`
+This repo includes **continuous deployment** in two layers:
+
+### 1. Publish containers (GitHub Actions → GHCR)
+
+Workflow [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) runs when:
+
+- **`CI` succeeds on `main`** (via `workflow_run`), or  
+- You trigger **Deploy** manually under **Actions → Deploy → Run workflow**.
+
+It builds and pushes:
+
+- `ghcr.io/<your-github-user>/taskflow-backend:latest` (+ SHA tag)
+- `ghcr.io/<your-github-user>/taskflow-frontend:latest` (+ SHA tag)
+
+**Make packages readable:** In GitHub → **Packages** → each package → **Package settings** → **Change visibility** (public for a portfolio, or private + `read:packages` PAT on the server).
+
+**First-time setup:** Pushing workflow files needs a PAT with the **`workflow`** scope (or edit/commit the YAML on github.com).
+
+### 2. Run what you published (VPS)
+
+On any Linux host with Docker:
+
+```bash
+docker login ghcr.io -u YOUR_GITHUB_USERNAME -p YOUR_PAT_WITH_read:packages
+
+cd taskflow
+cp .env.example .env
+# Set DB_PASSWORD, SECRET_KEY, ALLOWED_ORIGINS, CR_OWNER=<same username, lowercase>
+
+docker compose -f docker-compose.ghcr.yml pull
+docker compose -f docker-compose.ghcr.yml up -d
+```
+
+### 3. Managed platforms (alternative)
+
+| Platform | Idea |
+|----------|------|
+| **Railway / Render / Fly** | Connect the GitHub repo; enable **auto-deploy on push to `main`** (platform builds from `backend/` + `frontend/` Dockerfiles). |
+| **GHCR** | Point the service at the images from step 1 instead of rebuilding (fewer surprises vs huge ML deps on small builders). |
+
+Render-style split (Postgres + API + static frontend) still works; ensure Postgres has the **`vector`** extension for semantic search.
+
+## Deployment (Render — manual outline)
+
+1. Push to GitHub  
+2. Create a **Web Service** on [render.com](https://render.com) pointing to `backend/`  
+3. Add environment variables from `.env.example`  
+4. Create **PostgreSQL** with **`pgvector`** enabled  
+5. **Static Site** for the frontend: build `npm run build`, publish `dist` (or deploy the frontend Docker image / GHCR image if you prefer one hostname + nginx proxy)
 
 ## Resume Bullet Points
 
