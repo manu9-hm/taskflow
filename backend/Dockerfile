@@ -2,12 +2,10 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install dependencies first (layer caching)
+# Dependencies only at build time — embedding weights download on first use at runtime
+# (previously downloading here broke CI: disk/time limits on GitHub-hosted runners)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Pre-download the embedding model at build time so the container starts fast
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2', cache_folder='/models')"
 
 COPY . .
 

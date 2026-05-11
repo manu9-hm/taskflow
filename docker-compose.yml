@@ -24,6 +24,9 @@ services:
       SECRET_KEY: ${SECRET_KEY}
       ENVIRONMENT: production
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost}
+      EMBEDDING_CACHE_DIR: /models
+    volumes:
+      - embedding_models:/models
     depends_on:
       db:
         condition: service_healthy
@@ -40,3 +43,4 @@ services:
 
 volumes:
   postgres_data:
+  embedding_models:

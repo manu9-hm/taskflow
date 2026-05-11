@@ -67,6 +67,8 @@ docker compose up --build
 # API docs at http://localhost:8000/api/docs
 ```
 
+The backend image installs PyTorch + `sentence-transformers` at **build** time; model weights download on **first** semantic-search request and are cached in the `embedding_models` volume (`EMBEDDING_CACHE_DIR=/models`). That keeps CI Docker builds within GitHub runner disk limits.
+
 ## Local Development (without Docker)
 
 ### Backend

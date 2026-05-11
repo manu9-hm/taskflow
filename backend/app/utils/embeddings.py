@@ -1,21 +1,25 @@
 """
 Embedding utility — generates 384-dim vectors using a local sentence-transformer model.
-No external API calls; model is downloaded once and cached in /models.
+Weights download once on first use (cached under EMBEDDING_CACHE_DIR, default /models).
 """
 import logging
+import os
 from functools import lru_cache
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+_CACHE_DIR = os.environ.get("EMBEDDING_CACHE_DIR", "/models")
 
 
 @lru_cache(maxsize=1)
 def _load_model(model_name: str):
     """Load model once and cache in memory."""
     try:
+        os.makedirs(_CACHE_DIR, exist_ok=True)
         from sentence_transformers import SentenceTransformer
         logger.info("Loading embedding model: %s", model_name)
-        return SentenceTransformer(model_name, cache_folder="/models")
+        return SentenceTransformer(model_name, cache_folder=_CACHE_DIR)
     except Exception as exc:
         logger.warning("Could not load embedding model: %s", exc)
         return None
