@@ -22,6 +22,261 @@
 | Frontend | React 18, Vite, TailwindCSS |
 | DevOps | Docker, GitHub Actions |
 
+## Architecture & flow diagrams
+
+High-level views of how the repo fits together: runtime topology, code layout, request paths, and automation. GitHub renders these Mermaid diagrams in the README.
+
+### 1. Runtime topology (Docker Compose — production-style)
+
+```mermaid
+flowchart TB
+  subgraph Client["Client"]
+    U[User / Browser]
+  end
+
+  subgraph Host["Docker host"]
+    subgraph FE["frontend container — nginx:alpine"]
+      NG[nginx :80]
+      SPA[Static React build]
+      NG --> SPA
+      NG -->|"/api/*" proxy| FA
+    end
+
+    subgraph API["backend container — uvicorn :8000"]
+      FA[FastAPI app.main]
+      FA --> R_AUTH[routers/auth]
+      FA --> R_TASK[routers/tasks]
+      R_AUTH --> ORM[(SQLAlchemy async)]
+      R_TASK --> ORM
+      R_TASK --> EMB[utils/embeddings\nsentence-transformers]
+      EMB --> VOL[(Volume embedding_models\n/models cache)]
+    end
+
+    subgraph DB["db container — pgvector/pgvector:pg16"]
+      PG[(PostgreSQL + vector ext)]
+    end
+
+    ORM --> PG
+  end
+
+  U -->|HTTP :80| NG
+  U -.->|optional direct API| FA
+```
+
+### 2. Local development vs Docker (two ways to run)
+
+```mermaid
+flowchart LR
+  subgraph Dev["Local dev"]
+    V[Vite :5173\nfrontend]
+    UV[uvicorn :8000\nbackend]
+    V -->|proxy /api| UV
+    PGD[(Postgres + pgvector\nlocalhost)]
+    UV --> PGD
+  end
+
+  subgraph DC["docker-compose.yml"]
+    FED[nginx + SPA]
+    BED[FastAPI]
+    DBD[(pgvector image)]
+    FED --> BED
+    BED --> DBD
+  end
+
+  subgraph GHCR["docker-compose.ghcr.yml"]
+    FEG[image ghcr.io/.../taskflow-frontend]
+    BEG[image ghcr.io/.../taskflow-backend]
+    DBG[(pgvector image)]
+    FEG --> BEG
+    BEG --> DBG
+  end
+```
+
+### 3. Repository layout (how folders connect)
+
+```mermaid
+flowchart TB
+  subgraph Root["Repository root"]
+    ENV[".env.example\nCR_OWNER, DB_PASSWORD, SECRET_KEY, ..."]
+    DC1["docker-compose.yml\nbuild from source"]
+    DC2["docker-compose.ghcr.yml\npull from GHCR"]
+    GH[".github/workflows/\nci.yml · deploy.yml"]
+  end
+
+  subgraph BE["backend/"]
+    DF1[Dockerfile]
+    REQ[requirements.txt]
+    subgraph APP["app/"]
+      CFG[config.py]
+      DB[database.py]
+      MAIN[main.py]
+      MOD[models/\nUser, Task + Vector]
+      SCH[schemas/\nPydantic DTOs]
+      RT[routers/\nauth, tasks]
+      UT[utils/\nauth JWT, embeddings]
+    end
+  end
+
+  subgraph FE2["frontend/"]
+    DF2[Dockerfile + nginx.conf]
+    PKG[package.json + lockfile]
+    subgraph SRC["src/"]
+      API2[api/axios.js]
+      CTX[context/AuthContext.jsx]
+      PG2[pages/\nLogin, Register, Dashboard]
+      CMP[components/\nNavbar, TaskCard, TaskModal]
+    end
+  end
+
+  Root --> BE
+  Root --> FE2
+  MAIN --> RT
+  RT --> MOD
+  RT --> SCH
+  RT --> UT
+  PG2 --> CTX
+  PG2 --> API2
+  CMP --> PG2
+```
+
+### 4. Frontend SPA routing and data flow
+
+```mermaid
+flowchart TB
+  M[main.jsx\nBrowserRouter + AuthProvider]
+  A[App.jsx]
+  M --> A
+
+  A -->|"/login"| L[Login.jsx]
+  A -->|"/register"| R[Register.jsx]
+  A -->|"/" protected| D[Dashboard.jsx]
+
+  L & R --> CTX[AuthContext\nlogin / register / token]
+  D --> NAV[Navbar]
+  D --> CARDS[TaskCard list]
+  D --> MODAL[TaskModal create/edit]
+  CTX --> AX[api/axios.js\nBearer JWT + /api proxy]
+
+  AX -->|OAuth2 form| AUTH_EP["POST /api/auth/login"]
+  AX -->|JSON| TASK_EP["/api/tasks/*"]
+```
+
+### 5. Backend request path (layers)
+
+```mermaid
+flowchart LR
+  REQ[HTTP request] --> MW[CORS + FastAPI]
+  MW --> R{Router}
+
+  R -->|/api/auth/*| RA[auth.py]
+  R -->|/api/tasks/*| RT[task.py]
+
+  RA --> SA[schemas/user.py]
+  RT --> ST[schemas/task.py]
+
+  RA --> UA[utils/auth.py\nJWT, bcrypt]
+  RT --> UA
+  RT --> UE[utils/embeddings.py]
+
+  RA --> MU[(models/user)]
+  RT --> MT[(models/task)]
+
+  MU & MT --> DBL[database.py\nAsyncSession]
+  DBL --> PG[(PostgreSQL\npgvector column)]
+  UE --> STF[sentence-transformers\noptional /models cache]
+```
+
+### 6. Authentication sequence (register / login / me)
+
+```mermaid
+sequenceDiagram
+  participant B as Browser
+  participant F as FastAPI
+  participant DB as PostgreSQL
+
+  Note over B,DB: Register
+  B->>F: POST /api/auth/register JSON
+  F->>F: hash password bcrypt
+  F->>DB: INSERT user ORM
+  DB-->>F: user row
+  F-->>B: 201 UserOut
+
+  Note over B,DB: Login
+  B->>F: POST /api/auth/login form username=email
+  F->>DB: SELECT user by email
+  DB-->>F: user + hash
+  F->>F: verify password
+  F-->>B: access_token JWT
+
+  Note over B,DB: Me
+  B->>F: GET /api/auth/me Authorization Bearer
+  F->>F: decode JWT get_current_user
+  F->>DB: load user by id
+  F-->>B: UserOut
+```
+
+### 7. Task lifecycle, embeddings, and semantic search
+
+```mermaid
+sequenceDiagram
+  participant B as Browser
+  participant F as FastAPI tasks router
+  participant DB as PostgreSQL
+  participant BG as Background task
+  participant ST as sentence-transformers
+
+  Note over B,ST: Create / update task
+  B->>F: POST or PATCH /api/tasks
+  F->>DB: persist Task row embedding null
+  F-->>B: TaskOut
+  F->>BG: schedule _index_embedding
+  BG->>ST: encode title+description+tags
+  ST-->>BG: vector 384-dim
+  BG->>DB: UPDATE task.embedding
+
+  Note over B,ST: Semantic search
+  B->>F: POST /api/tasks/search query
+  F->>ST: encode query
+  ST-->>F: query vector
+  F->>DB: ORDER BY embedding cosine distance
+  DB-->>F: ranked tasks
+  F-->>B: list TaskOut
+
+  Note over B,ST: Fallback if model unavailable
+  F->>DB: ILIKE title description
+  DB-->>F: rows
+```
+
+### 8. CI and optional CD (GitHub Actions)
+
+```mermaid
+flowchart TB
+  PUSH[Push or PR to GitHub]
+
+  PUSH --> CI[Workflow CI]
+
+  subgraph CI["ci.yml"]
+    C1[Backend job\nPostgres service + pip + ruff + pytest]
+    C2[Frontend job\nNode + npm install + lint + build]
+    C3[Docker job on main only\nbuild backend + frontend images no push]
+  end
+
+  CI -->|success on main| CD{deploy.yml\noptional}
+
+  subgraph CD["deploy.yml when present"]
+    D1[Checkout same SHA as CI run]
+    D2[docker buildx push]
+    D3[ghcr.io/OWNER/taskflow-backend:latest]
+    D4[ghcr.io/OWNER/taskflow-frontend:latest]
+    D1 --> D2 --> D3
+    D2 --> D4
+  end
+
+  D3 & D4 -.->|docker compose pull| VPS[VPS or registry consumer]
+```
+
+---
+
 ## Project Structure
 
 ```
